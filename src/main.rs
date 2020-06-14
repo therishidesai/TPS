@@ -1,4 +1,9 @@
+extern crate tps;
+
 use std::thread;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::VecDeque;
 
 /*
 TPS implemtnation idea
@@ -23,26 +28,54 @@ fn apply<F>(f: F) where
 	f();
 }
 
-fn run_cb<F>(f: F, x: i32) where
-	F: Fn(i32) {
-	f(x)
-}
-fn simple_callback(x: i32) {
-    println!("hello world! {}", x);
-}
-
 fn simple_callback1(x: i32) {
     println!("hello world, {} is a number", x);
 }
 
 fn main() {
-	// run_cb(simple_callback, 1);
-	// run_cb(simple_callback1, 2);
-	let x = 7;
+	let buf = Arc::new(Mutex::new(VecDeque::new()));
+	let stop_flag = Arc::new(AtomicBool::new(false));
+	
+	let mut children = vec![];
+	let workers = 3;
 
-    // Capture `x` into an anonymous type and implement
-    // `Fn` for it. Store it in `print`.
-    let print = || simple_callback1(x);
+	for worker in 0..workers{
+		// ref count for the workqueue for this worker thread
+		let stop_flagn = Arc::clone(&stop_flag);
+		let bufn = buf.clone();
+		children.push(thread::spawn(move ||{
+			loop {
+				let mut workqueue = bufn.lock().unwrap();
+				let work_maybe = workqueue.pop_front();
+				match work_maybe {
+					None => {
+						if stop_flagn.load(Ordering::Relaxed) {
+							break;
+						} else {
+							continue;
+						}
+					},
+					Some(work) => {
+						print!("Thread{}: ", worker);
+						apply(work);
+					},
+				}
+			}
+		}));
+		
+	}
 
-    apply(print);
+	for x in 0..100 {
+		// Capture `x` into an anonymous type and implement
+		// `Fn` for it. Store it in `print`.
+		let mut workqueue = buf.lock().unwrap();
+		workqueue.push_back(move || simple_callback1(x));
+	}
+
+	stop_flag.swap(true, Ordering::Relaxed);
+
+	for child in children {
+        // Wait for the thread to finish. Returns a result.
+        let _ = child.join();
+    }
 }
