@@ -30,6 +30,7 @@ impl ThreadPool {
 				loop {
 					let mut wq = bufn.lock().unwrap();
 					let work_maybe = wq.pop_front();
+					drop(wq);
 					match work_maybe {
 						None => {
 							if stop_flagn.load(Ordering::Relaxed) {
