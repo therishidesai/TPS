@@ -1,13 +1,12 @@
 use std::thread;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::collections::VecDeque;
-
+use crossbeam::queue::SegQueue;
 
 pub struct ThreadPool {
 	workers: Vec<Option<std::thread::JoinHandle<()>>>,
 	stop_flag: Arc<AtomicBool>,
-	workqueue: Arc<Mutex<VecDeque<Box<Fn() + Send + 'static>>>>
+	workqueue: Arc<SegQueue<Box<Fn() + Send + 'static>>>,
 }
 
 fn apply<F>(f: F) where
@@ -20,26 +19,24 @@ impl ThreadPool {
 		assert!(size > 0);
 		let mut workers = Vec::with_capacity(size);
 		let stop_flag = Arc::new(AtomicBool::new(false));
-		let workqueue = Arc::new(Mutex::new(VecDeque::new()));
+		let workqueue = Arc::new(SegQueue::new());
 
 		for worker in 0..size {
 			// ref count for the workqueue for this worker thread
 			let stop_flagn = Arc::clone(&stop_flag);
-			let bufn = workqueue.clone();
+			let wq = workqueue.clone();
 			workers.push(Some(thread::spawn(move ||{
 				loop {
-					let mut wq = bufn.lock().unwrap();
-					let work_maybe = wq.pop_front();
-					drop(wq);
+					let work_maybe = wq.pop();
 					match work_maybe {
-						None => {
+						Err(_err) => {
 							if stop_flagn.load(Ordering::Relaxed) {
 								break;
 							} else {
 								continue;
 							}
 						},
-						Some(work) => {
+						Ok(work) => {
 							print!("Thread{}: ", worker);
 							apply(work);
 						},
@@ -66,9 +63,8 @@ impl ThreadPool {
 		}
 	}
 
-	pub fn push_work<F>(&self, f: F) where
-		F: Fn() + Send + 'static{
-		let mut wq = self.workqueue.lock().unwrap();
-		wq.push_back(Box::new(f));
+pub fn push_work<F>(&self, f: F) where
+	F: Fn() + Send + 'static{
+		self.workqueue.push(Box::new(f));
 	}
 }

@@ -11,3 +11,4 @@ debug = true
 
 [dependencies]
 rand = "0.7"
+crossbeam = "0.7"
