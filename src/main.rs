@@ -2,7 +2,8 @@ extern crate tps;
 
 use rand::Rng;
 use std::{thread, time};
-use tps::threadpool::ThreadPool;
+use tps::TPS;
+//use tps::threadpool::ThreadPool;
 
 /*
 TPS implemtnation idea
@@ -23,21 +24,30 @@ TPS implemtnation idea
 // ThreadPool Experiment
 
 fn simple_callback1(x: i32) {
-    println!("hello world, {} is a number", x);
+    println!("hello I'm a subscriber 1, {} is a number", x);
 	// randomly sleep for some seconds, mimic long running functions
 	let mut rng = rand::thread_rng();
 	let mul = rng.gen_range(1, 5);
-	thread::sleep(time::Duration::from_millis(1000 * mul));
+	thread::sleep(time::Duration::from_millis(100 * mul));
+}
+
+fn simple_callback2(x: i32) {
+    println!("hello I'm a subscriber 2, {} is a number", x);
+	// randomly sleep for some seconds, mimic long running functions
+	let mut rng = rand::thread_rng();
+	let mul = rng.gen_range(1, 5);
+	thread::sleep(time::Duration::from_millis(100 * mul));
 }
 
 fn main() {
-	let mut tp = ThreadPool::new(5);
-	
-	for x in 0..100 {
-		// Capture `x` into an anonymous type and implement
-		// `Fn` for it. Store it in `print`.
-		tp.push_work(move || simple_callback1(x));
-	}
+	let mut tps = TPS::new(1);
+	tps.register_topic("test");
+	tps.register_subscriber("test", simple_callback1);
+	tps.register_subscriber("test", simple_callback2);
 
-	tp.stop();
+	for x in 0..10 {
+		println!("Publishing: {} on test topic", x);
+		tps.publish("test", x);
+	}
+	tps.shutdown();
 }
